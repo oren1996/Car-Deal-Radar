@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "car-deal-radar"
+version = "0.1.0"
+description = "Spot undervalued used-car listings in Israel - an automotive adaptation of weeks 6-8 of Ed Donner's LLM Engineering course"
+requires-python = ">=3.11"
+dependencies = [
+    # Loaded the same way as every notebook in the official course: load_dotenv(override=True).
+    "python-dotenv>=1.1.1",
+]
+
+# Optional groups mirror the official course pyproject.toml (ed-donner/llm_engineering).
+# They are NOT needed to run the current skeleton; install them when the matching phase starts.
+[project.optional-dependencies]
+# Phase 1 (week 6): frontier calls use litellm.completion in week6/day4.ipynb and the
+# openai client in week8/agents/frontier_agent.py and scanner_agent.py.
+frontier = [
+    "openai>=1.109.1",
+    "anthropic>=0.69.0",
+    "litellm>=1.77.5",
+]
+# Phase 2 (week 7): pinned as in the official pyproject.toml. The week 7 QLoRA training
+# itself runs in a Google Colab notebook which additionally installs peft, trl and
+# bitsandbytes; those get added here when Phase 2 is actually implemented.
+finetuning = [
+    "datasets==3.6.0",
+    "torch>=2.8.0",
+    "transformers>=4.56.2",
+]
+# Phase 3 (week 8): week8/agents/messaging_agent.py sends Pushover notifications via requests.
+notifications = [
+    "requests>=2.32.5",
+]
+# pytest is not part of the official course repo; it is only needed to run this project's tests.
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+car-deal-radar = "car_deal_radar.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
