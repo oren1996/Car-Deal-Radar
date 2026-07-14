@@ -61,6 +61,15 @@ tests/test_core.py         fast offline tests
 
 Requires Python 3.11+ (same floor as the official course repo).
 
+With [uv](https://docs.astral.sh/uv/), the package manager used by the official
+course repo (which ships a `uv.lock`, as does this project):
+
+```bash
+uv sync --extra dev
+```
+
+Or with plain pip:
+
 ```bash
 pip install -e ".[dev]"
 ```
@@ -68,7 +77,8 @@ pip install -e ".[dev]"
 ## Running
 
 ```bash
-python -m car_deal_radar.main
+uv run python -m car_deal_radar.main   # with uv
+python -m car_deal_radar.main          # with pip
 # or, via the console script:
 car-deal-radar
 ```
@@ -79,8 +89,13 @@ Copy `.env.example` to `.env` and add keys only when Phase 1 starts.
 ## Tests
 
 ```bash
-pytest
+uv run pytest   # or just: pytest
 ```
+
+## Roadmap
+
+The detailed, step-by-step plan to complete phases 1-3 lives in
+[ROADMAP.md](ROADMAP.md).
 
 ## Important limitation
 

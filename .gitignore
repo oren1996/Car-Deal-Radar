@@ -2,6 +2,7 @@
 .env
 
 # Python artifacts
+.venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
