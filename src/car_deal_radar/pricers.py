@@ -64,8 +64,9 @@ class BaselinePricer(BasePricer):
         value = self.base_price_ils * (self.annual_depreciation**age)
         if listing.fuel_type:
             value *= self.fuel_factors.get(listing.fuel_type, 1.0)
-        excess_km = listing.mileage_km - age * self.expected_km_per_year
-        value -= excess_km * self.price_per_excess_km
+        if listing.mileage_km is not None:
+            excess_km = listing.mileage_km - age * self.expected_km_per_year
+            value -= excess_km * self.price_per_excess_km
         value = max(value, self.minimum_price_ils)
         return PricePrediction(
             listing_id=listing.listing_id,

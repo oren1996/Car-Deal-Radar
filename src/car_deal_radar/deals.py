@@ -84,9 +84,13 @@ class DealFinder:
         age = REFERENCE_YEAR - listing.year
         if age < 0 or listing.year < 1950:
             flags.append(f"implausible year: {listing.year}")
-        elif age >= LOW_MILEAGE_AGE_YEARS and listing.mileage_km < age * LOW_MILEAGE_KM_PER_YEAR:
+        elif (
+            listing.mileage_km is not None
+            and age >= LOW_MILEAGE_AGE_YEARS
+            and listing.mileage_km < age * LOW_MILEAGE_KM_PER_YEAR
+        ):
             flags.append("unusually low mileage for vehicle age")
-        if listing.mileage_km > EXTREME_MILEAGE_KM:
+        if listing.mileage_km is not None and listing.mileage_km > EXTREME_MILEAGE_KM:
             flags.append(f"extremely high mileage: {listing.mileage_km:,} km")
         if not listing.fuel_type and not listing.transmission and not listing.previous_owners:
             flags.append("key details missing (fuel type, transmission, owners)")

@@ -57,7 +57,7 @@ def validate_listing(listing: CarListing) -> list[str]:
         problems.append("missing model")
     if not MIN_PLAUSIBLE_YEAR <= listing.year <= MAX_PLAUSIBLE_YEAR:
         problems.append(f"implausible year: {listing.year}")
-    if listing.mileage_km < 0:
+    if listing.mileage_km is not None and listing.mileage_km < 0:
         problems.append(f"negative mileage: {listing.mileage_km}")
     if listing.asking_price_ils <= 0:
         problems.append(f"asking price is zero or negative: {listing.asking_price_ils}")

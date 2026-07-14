@@ -54,6 +54,8 @@ src/car_deal_radar/
     main.py                offline end-to-end demo
 tests/test_core.py         fast offline tests
 scripts/scrape_yad2.py     Yad2 scraper (embedded Next.js JSON, no browser)
+scripts/inspect_dataset.py check whether a used-car CSV fits the pipeline
+scripts/convert_dataset.py Kaggle Israel CSV -> CarListing JSON
 ```
 
 \* skeleton only — `predict()` raises `NotImplementedError` until its phase.

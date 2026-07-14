@@ -27,7 +27,7 @@ class CarListing:
     make: str
     model: str
     year: int
-    mileage_km: int
+    mileage_km: int | None
     ownership_type: str | None
     previous_owners: int | None
     transmission: str | None
@@ -47,8 +47,9 @@ class CarListing:
         parts: list[str] = [
             f"{self.make} {self.model}",
             f"year {self.year}",
-            f"{self.mileage_km:,} km",
         ]
+        if self.mileage_km is not None:
+            parts.append(f"{self.mileage_km:,} km")
         if self.fuel_type:
             parts.append(self.fuel_type)
         if self.transmission:

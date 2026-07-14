@@ -49,6 +49,14 @@ def test_to_model_text_contains_make_model_year() -> None:
     assert "2020" in text
 
 
+def test_to_model_text_handles_missing_mileage() -> None:
+    # Some real datasets (e.g. the Kaggle Israel set) have no mileage column.
+    text = make_listing(mileage_km=None).to_model_text()
+    assert "km" not in text
+    assert "Toyota" in text and "2020" in text
+    assert validate_listing(make_listing(mileage_km=None)) == []
+
+
 def test_to_model_text_excludes_asking_price() -> None:
     listing = make_listing(asking_price_ils=123456.0)
     text = listing.to_model_text()
