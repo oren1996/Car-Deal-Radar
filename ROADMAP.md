@@ -16,14 +16,17 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 
 ### 1.1 Obtenir un vrai jeu de données d'annonces
 
-- Choisir une source d'annonces auto israéliennes (export manuel, dataset
-  public, ou scraping — vérifier les CGU du site avant tout scraping).
-- Convertir les données brutes au format JSON de `data/sample_cars.json`
-  (mêmes champs que `CarListing`).
-- Écrire la conversion dans un petit script séparé (hors package) ou étendre
-  `load_car_listings` si le format d'entrée est proche.
+- Source choisie : scraping direct de Yad2 via le JSON `__NEXT_DATA__` embarqué
+  dans ses pages Next.js — voir `scripts/scrape_yad2.py` (requêtes HTTP
+  simples avec `requests`, sans navigateur). Plan B si Yad2 bloque (captcha
+  « Are you for real ») : Playwright.
+- Lancer : `uv sync --extra scraping` puis
+  `python scripts/scrape_yad2.py --pages N --delay 3` → `data/yad2_cars.json`
+  au format `CarListing`. Rester à petit volume, usage personnel/pédagogique,
+  ne pas republier les données.
 - Référence cours : `week6/pricer/loaders.py` + `parser.py` (chargement +
-  parsing par datapoint, retour `None` pour les rejets).
+  parsing par datapoint, retour `None` pour les rejets — même pattern dans
+  `to_listing_dict`).
 - **Done quand** : ≥ quelques centaines d'annonces réelles chargées et validées
   par `validate_listing`.
 

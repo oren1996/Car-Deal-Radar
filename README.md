@@ -53,6 +53,7 @@ src/car_deal_radar/
     deals.py               DealFinder: estimate, risk flags, scoring
     main.py                offline end-to-end demo
 tests/test_core.py         fast offline tests
+scripts/scrape_yad2.py     Yad2 scraper (embedded Next.js JSON, no browser)
 ```
 
 \* skeleton only — `predict()` raises `NotImplementedError` until its phase.
