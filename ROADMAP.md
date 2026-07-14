@@ -34,6 +34,13 @@ ce projet à modifier, et un critère de fin (« Done quand »).
   notebook, comme `week6/day1.ipynb`/`day2.ipynb` le fait pour les produits :
   histogrammes, valeurs aberrantes, tranches de prix retenues.
 - Décider des bornes de prix min/max à garder (le cours élague les extrêmes).
+- **Drift temporel** : si l'entraînement se fait sur un dataset historique
+  (ex. Kaggle, arrêté mi-2024) et l'inférence sur des annonces fraîchement
+  scrapées, mesurer l'écart : garder un petit échantillon d'annonces récentes
+  comme jeu de calibration, comparer l'erreur dessus vs le test set
+  historique, et si besoin appliquer un facteur de correction global
+  (régression prédit → réel sur l'échantillon récent). Réévaluer ce facteur à
+  chaque nouvelle collecte.
 - Faire le split avec `split_listings` (seed fixe) et le sauvegarder pour que
   train/test restent stables entre expériences.
 - Optionnel (fidèle au cours) : pousser le dataset sur le Hugging Face Hub
@@ -146,22 +153,35 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 - **Done quand** : deux exécutions successives ne re-signalent pas les mêmes
   annonces.
 
-### 3.2 Ensemble de modèles
+### 3.2 RAG sur le prédicteur frontier
+
+- C'est ici que le RAG entre dans le projet du cours : dans
+  `week8/agents/frontier_agent.py`, le FrontierAgent ne demande pas un prix
+  « à froid » — il cherche les 5 produits les plus similaires dans un
+  vectorstore ChromaDB (embeddings `sentence-transformers/all-MiniLM-L6-v2`)
+  et injecte leurs descriptions + prix dans le prompt comme contexte.
+- Construire le vectorstore à partir du train set (comme `week8/day2.ipynb`
+  remplit `products_vectorstore`) : une entrée par annonce, document =
+  `to_model_text()`, métadonnée = prix.
+- Étendre `FrontierLLMPricer` (ou créer une variante RAG) : recherche des 5
+  voitures similaires → contexte « Potentially related car: ... Price is
+  ₪... » → appel frontier.
+- Dépendances à ajouter à ce moment-là : `chromadb>=1.1.0`,
+  `sentence-transformers>=5.1.1` (versions du pyproject officiel).
+- Mesurer l'apport : erreur avec RAG vs sans RAG sur le test set.
+- **Done quand** : le pricer frontier + RAG bat le pricer frontier seul.
+
+### 3.3 Ensemble de modèles
 
 - Référence : `week8/agents/ensemble_agent.py` — combinaison pondérée des
   prédicteurs (le cours pondère frontier 0.8 / spécialiste 0.1 / réseau de
   neurones 0.1).
 - Remplacer la moyenne simple de `DealFinder.estimate_price` par une
   pondération apprise ou fixée à partir des résultats de la phase 2.
-- Optionnel (fidèle au cours) : ajouter le RAG de
-  `week8/agents/frontier_agent.py` — ChromaDB + `sentence-transformers`
-  (all-MiniLM-L6-v2) pour injecter 5 voitures similaires et leurs prix dans le
-  prompt frontier. N'ajouter `chromadb`/`sentence-transformers` qu'à ce
-  moment-là.
 - **Done quand** : l'estimation agrégée bat chaque prédicteur individuel sur
   le test set (ou la déviation est documentée).
 
-### 3.3 Notifications Pushover
+### 3.4 Notifications Pushover
 
 - Référence : `week8/agents/messaging_agent.py` — `requests.post` sur
   `https://api.pushover.net/1/messages.json` avec `PUSHOVER_USER` /
@@ -174,13 +194,13 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 - **Done quand** : une vraie notification reçue sur téléphone pour un deal
   au-dessus du seuil.
 
-### 3.4 Orchestration planifiée
+### 3.5 Orchestration planifiée
 
 - Référence : `week8/agents/planning_agent.py` (workflow scan → estimation →
   tri par remise → alerte si remise > seuil) et `deal_agent_framework.py`
   (boucle + mémoire persistante).
-- Découper `DealFinder` en : scanner (3.1), estimateur/ensemble (3.2),
-  planificateur (ce point), messagerie (3.3). Garder les mêmes signatures
+- Découper `DealFinder` en : scanner (3.1), estimateur/ensemble (3.2-3.3),
+  planificateur (ce point), messagerie (3.4). Garder les mêmes signatures
   publiques tant que possible pour ne pas casser les tests.
 - Ajouter un point d'entrée `python -m car_deal_radar.radar` (ou étendre
   `main.py`) qui exécute un cycle complet.
@@ -188,7 +208,7 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 - **Done quand** : un cycle complet tourne sans intervention et alimente
   `memory.json`.
 
-### 3.5 Interface et déploiement (optionnel, comme la fin du cours)
+### 3.6 Interface et déploiement (optionnel, comme la fin du cours)
 
 - Gradio : le cours termine avec `week8/price_is_right.py` (UI Gradio montrant
   les deals et les logs). Ajouter une petite UI Gradio listant les
@@ -219,5 +239,5 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 ## Ordre recommandé
 
 1.1 → 1.2 → 1.4 → 1.5 (1.3 en parallèle si souhaité), puis 2.1 → 2.2 → 2.3 →
-2.4, puis 3.1 → 3.2 → 3.3 → 3.4 (→ 3.5). Chaque phase se termine par la mise à
-jour du benchmark et du README.
+2.4, puis 3.1 → 3.2 → 3.3 → 3.4 → 3.5 (→ 3.6). Chaque phase se termine par la
+mise à jour du benchmark et du README.
