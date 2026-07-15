@@ -24,8 +24,6 @@ import time
 from pathlib import Path
 from typing import Any, Iterator
 
-from scrapling.fetchers import StealthyFetcher
-
 from car_deal_radar.data import validate_listing
 from car_deal_radar.models import CarListing
 
@@ -78,6 +76,10 @@ def fetch_page(page: int, timeout: float = 120.0) -> str:
     returns the real page. `network_idle` lets client-side hydration settle so
     the __NEXT_DATA__ payload is fully present.
     """
+    # Imported lazily so the parsing helpers stay usable/testable without the
+    # heavy scrapling + Camoufox browser dependency installed.
+    from scrapling.fetchers import StealthyFetcher
+
     result = StealthyFetcher.fetch(
         f"{CARS_URL}?page={page}",
         headless=True,
@@ -148,6 +150,40 @@ def _int_or_none(value: Any) -> int | None:
     return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
+def _field_lower(value: Any, translations: dict[str, str] | None = None) -> str | None:
+    """Like _field_text but lowercased, so 'Petrol'/'Automatic' match the
+    lowercase keys BaselinePricer and DealFinder expect."""
+    text = _field_text(value, translations)
+    return text.lower() if text else None
+
+
+def build_description(vehicle: dict[str, Any]) -> str:
+    """Synthesize the listing text: trim + horsepower + premium equipment tags,
+    followed by the seller's own description.
+
+    The rich fields (subModel, horsePower, carTag) live on the item page, not
+    the search feed, so this gracefully degrades to the seller description alone
+    when they are absent.
+    """
+    lead: list[str] = []
+    sub_model = vehicle.get("subModel")
+    if isinstance(sub_model, dict) and (sub_model.get("text") or "").strip():
+        lead.append(sub_model["text"].strip())
+    hp = _int_or_none(vehicle.get("horsePower"))
+    if hp:
+        lead.append(f"{hp} hp")
+    car_tags = vehicle.get("carTag")
+    if isinstance(car_tags, list):
+        features = [t.get("textEng") for t in car_tags if isinstance(t, dict) and t.get("textEng")]
+        if features:
+            lead.append(", ".join(features))
+    seller = str((vehicle.get("metaData") or {}).get("description") or "").strip()
+    lead_text = " · ".join(lead)
+    if lead_text and seller:
+        return f"{lead_text}\n{seller}"
+    return lead_text or seller
+
+
 def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
     """Map one raw Yad2 vehicle dict onto the CarListing JSON schema.
 
@@ -163,10 +199,13 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
     model = _field_text(vehicle.get("model"))
     if not token or not price or price <= 0 or not year or not make or not model:
         return None
-    metadata = vehicle.get("metaData") or {}
-    description = metadata.get("description") or ""
     hand = vehicle.get("hand")
+    # adType ("private"/"commercial") is cleaner English than owner.text ("פרטית").
+    ad_type = vehicle.get("adType")
     owner = vehicle.get("owner")
+    ownership_type = ad_type if isinstance(ad_type, str) and ad_type.strip() else (
+        _field_text(owner) if isinstance(owner, dict) else None
+    )
     return {
         "listing_id": f"yad2-{token}",
         "source": "yad2",
@@ -175,16 +214,16 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
         "model": model,
         "year": year,
         "mileage_km": km,
-        "ownership_type": _field_text(owner) if isinstance(owner, dict) else None,
+        "ownership_type": ownership_type,
         "previous_owners": _int_or_none(hand.get("id")) if isinstance(hand, dict) else None,
-        "transmission": _field_text(vehicle.get("gearBox"), HEBREW_TRANSMISSIONS),
-        "fuel_type": _field_text(vehicle.get("engineType"), HEBREW_FUEL_TYPES),
+        "transmission": _field_lower(vehicle.get("gearBox"), HEBREW_TRANSMISSIONS),
+        "fuel_type": _field_lower(vehicle.get("engineType"), HEBREW_FUEL_TYPES),
         "engine_size_cc": _int_or_none(vehicle.get("engineVolume")),
         "location": (
             _field_text((vehicle.get("address") or {}).get("city"))
             or _field_text((vehicle.get("address") or {}).get("area"))
         ),
-        "description": str(description).strip(),
+        "description": build_description(vehicle),
         "asking_price_ils": float(price),
     }
 
