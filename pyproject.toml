@@ -34,9 +34,13 @@ finetuning = [
 notifications = [
     "requests>=2.32.5",
 ]
-# scripts/scrape_yad2.py: plain-HTTP scraping with requests, as the course does
-# for its RSS deal scraping in week8/agents/deals.py.
+# scripts/scrape_yad2.py: Scrapling's StealthyFetcher (a Camoufox stealth
+# browser) clears Yad2's Radware bot protection, which blocks plain HTTP and
+# even automated Chrome. After `uv sync --extra scraping`, run once:
+#   uv run scrapling install   (downloads the Camoufox browser)
+# requests is kept for lightweight probing / other sources.
 scraping = [
+    "scrapling[fetchers]>=0.4",
     "requests>=2.32.5",
 ]
 # pytest is not part of the official course repo; it is only needed to run this project's tests.

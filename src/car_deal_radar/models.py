@@ -27,7 +27,7 @@ class CarListing:
     make: str
     model: str
     year: int
-    mileage_km: int | None
+    mileage_km: int | None  # Yad2's search feed omits mileage; it's only on the item page.
     ownership_type: str | None
     previous_owners: int | None
     transmission: str | None

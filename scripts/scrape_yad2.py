@@ -1,11 +1,11 @@
 """Scrape car listings from Yad2 by reading the page's embedded Next.js JSON.
 
 Yad2 is a Next.js app: each search-results page embeds all its listing data in
-a <script id="__NEXT_DATA__"> tag, so no browser automation is needed - plain
-HTTP requests suffice (same spirit as the course's requests-based scraping in
-week8/agents/deals.py). If Yad2 serves its anti-bot captcha instead (the
-response contains "Are you for real"), this script stops with a clear message;
-the fallback plan is Playwright.
+a <script id="__NEXT_DATA__"> tag. Yad2 sits behind Radware Bot Manager, which
+serves a JavaScript-challenge "Loader page" to plain HTTP clients and even to
+automated Chrome (tested). Scrapling's StealthyFetcher (a Camoufox stealth
+browser) clears the challenge, after which the __NEXT_DATA__ JSON is present as
+usual. Note the search feed omits mileage (km); it lives on each item page.
 
 Usage (from the repo root, after `uv sync --extra scraping`):
 
@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterator
 
-import requests
+from scrapling.fetchers import StealthyFetcher
 
 from car_deal_radar.data import validate_listing
 from car_deal_radar.models import CarListing
@@ -32,19 +32,10 @@ from car_deal_radar.models import CarListing
 CARS_URL = "https://www.yad2.co.il/vehicles/cars"
 ITEM_URL = "https://www.yad2.co.il/vehicles/item/{token}"
 NEXT_DATA_MARKER = '<script id="__NEXT_DATA__" type="application/json">'
-ANTIBOT_MARKER = "Are you for real"
-
-# Browser-like headers; Yad2 rejects the default python-requests user agent.
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+# Yad2 sits behind Radware Bot Manager. To a plain-HTTP client it returns a
+# "Loader page" (a JS challenge) whose server header is "rdwr" and whose title
+# is "Radware Page" - not the old "Are you for real" captcha. Detect all of it.
+ANTIBOT_MARKERS = ("Are you for real", "Radware Page", "Loader page.")
 
 # Fallback translations for common Hebrew field values (textEng is preferred
 # when Yad2 provides it). Fuel values match BaselinePricer.fuel_factors.
@@ -69,17 +60,38 @@ HEBREW_TRANSMISSIONS = {
 }
 
 
-def fetch_page(session: requests.Session, page: int, timeout: float = 15.0) -> str:
-    """Fetch one search-results page and return its HTML."""
-    response = session.get(CARS_URL, params={"page": page}, headers=HEADERS, timeout=timeout)
-    response.raise_for_status()
-    if ANTIBOT_MARKER in response.text:
+def _page_html(page: Any) -> str:
+    """Return a Scrapling fetch result's HTML as a string, across versions."""
+    for attr in ("html_content", "body"):
+        value = getattr(page, attr, None)
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        if isinstance(value, str) and value:
+            return value
+    return str(page)
+
+
+def fetch_page(page: int, timeout: float = 120.0) -> str:
+    """Fetch one search-results page with Scrapling's stealth browser.
+
+    StealthyFetcher (Camoufox) executes Yad2's Radware JavaScript challenge and
+    returns the real page. `network_idle` lets client-side hydration settle so
+    the __NEXT_DATA__ payload is fully present.
+    """
+    result = StealthyFetcher.fetch(
+        f"{CARS_URL}?page={page}",
+        headless=True,
+        network_idle=True,
+        timeout=int(timeout * 1000),  # Scrapling expects milliseconds
+    )
+    html = _page_html(result)
+    if getattr(result, "status", 200) != 200 or any(m in html for m in ANTIBOT_MARKERS):
         raise RuntimeError(
-            "Yad2 served its anti-bot captcha instead of the listings page. "
-            "Try again later, from a residential IP, with a longer --delay - "
-            "or fall back to Playwright."
+            "Yad2 returned a Radware bot-protection page even through Scrapling's "
+            "stealth browser. Retry later with a longer --delay; if it persists, "
+            "Yad2 may have tightened its bot protection."
         )
-    return response.text
+    return html
 
 
 def extract_next_data(html: str) -> dict[str, Any]:
@@ -139,8 +151,9 @@ def _int_or_none(value: Any) -> int | None:
 def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
     """Map one raw Yad2 vehicle dict onto the CarListing JSON schema.
 
-    Returns None when essential fields (token, price, year, km, make, model)
-    are missing - same "parse or reject" pattern as week6/pricer/parser.py.
+    Returns None when essential fields (token, price, year, make, model) are
+    missing - same "parse or reject" pattern as week6/pricer/parser.py. Mileage
+    (km) is absent from the search feed, so it is optional here and stays None.
     """
     token = vehicle.get("token")
     price = _int_or_none(vehicle.get("price"))
@@ -148,7 +161,7 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
     km = _int_or_none(vehicle.get("km"))
     make = _field_text(vehicle.get("manufacturer"))
     model = _field_text(vehicle.get("model"))
-    if not token or not price or price <= 0 or not year or km is None or not make or not model:
+    if not token or not price or price <= 0 or not year or not make or not model:
         return None
     metadata = vehicle.get("metaData") or {}
     description = metadata.get("description") or ""
@@ -167,7 +180,10 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
         "transmission": _field_text(vehicle.get("gearBox"), HEBREW_TRANSMISSIONS),
         "fuel_type": _field_text(vehicle.get("engineType"), HEBREW_FUEL_TYPES),
         "engine_size_cc": _int_or_none(vehicle.get("engineVolume")),
-        "location": _field_text((vehicle.get("address") or {}).get("city")),
+        "location": (
+            _field_text((vehicle.get("address") or {}).get("city"))
+            or _field_text((vehicle.get("address") or {}).get("area"))
+        ),
         "description": str(description).strip(),
         "asking_price_ils": float(price),
     }
@@ -175,11 +191,10 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
 
 def scrape(pages: int, delay: float, out_path: Path, dump_raw: bool) -> int:
     """Scrape the requested number of pages and write CarListing-format JSON."""
-    session = requests.Session()
     listings: dict[str, dict[str, Any]] = {}
     for page in range(1, pages + 1):
-        print(f"Fetching page {page}/{pages} ...")
-        html = fetch_page(session, page)
+        print(f"Fetching page {page}/{pages} (stealth browser) ...")
+        html = fetch_page(page)
         next_data = extract_next_data(html)
         if dump_raw and page == 1:
             raw_path = out_path.with_suffix(".raw.json")
@@ -221,7 +236,8 @@ def main() -> None:
         parser.error("--pages must be >= 1")
     try:
         count = scrape(args.pages, args.delay, args.out, args.dump_raw)
-    except (requests.RequestException, RuntimeError) as exc:
+    except (RuntimeError, OSError) as exc:
+        # RuntimeError: our anti-bot / parse guards. OSError: browser/network faults.
         print(f"\nScraping failed: {exc}", file=sys.stderr)
         sys.exit(1)
     if count == 0:

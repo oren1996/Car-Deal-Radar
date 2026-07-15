@@ -1,6 +1,9 @@
 # Never commit real secrets
 .env
 
+# Scraped Yad2 data — contains seller info; do not republish (see scripts/scrape_yad2.py)
+data/yad2_*.json
+
 # Python artifacts
 .venv/
 __pycache__/

@@ -16,19 +16,34 @@ ce projet à modifier, et un critère de fin (« Done quand »).
 
 ### 1.1 Obtenir un vrai jeu de données d'annonces
 
-- Source choisie : scraping direct de Yad2 via le JSON `__NEXT_DATA__` embarqué
-  dans ses pages Next.js — voir `scripts/scrape_yad2.py` (requêtes HTTP
-  simples avec `requests`, sans navigateur). Plan B si Yad2 bloque (captcha
-  « Are you for real ») : Playwright.
-- Lancer : `uv sync --extra scraping` puis
-  `python scripts/scrape_yad2.py --pages N --delay 3` → `data/yad2_cars.json`
-  au format `CarListing`. Rester à petit volume, usage personnel/pédagogique,
-  ne pas republier les données.
-- Référence cours : `week6/pricer/loaders.py` + `parser.py` (chargement +
-  parsing par datapoint, retour `None` pour les rejets — même pattern dans
-  `to_listing_dict`).
-- **Done quand** : ≥ quelques centaines d'annonces réelles chargées et validées
-  par `validate_listing`.
+- Source : scraping de Yad2 via le JSON `__NEXT_DATA__` de ses pages Next.js.
+  **Yad2 est protégé par Radware Bot Manager** : les requêtes HTTP simples
+  (`requests`) ET l'automatisation navigateur classique (Playwright, même Chrome
+  réel piloté par CDP) reçoivent une page-défi « Radware Page », pas les
+  annonces. La solution testée qui fonctionne est **Scrapling `StealthyFetcher`**
+  (navigateur furtif Camoufox) — voir `scripts/scrape_yad2.py`. Le
+  `__NEXT_DATA__` est bien présent une fois le défi JavaScript franchi.
+- **Scrape en deux temps** (le flux de recherche est incomplet) :
+  (a) le flux `…/vehicles/cars?page=N` donne ~37 annonces/page avec `token` +
+  résumé (marque, modèle, année, prix, carburant, cylindrée, nb de mains,
+  localisation) mais **PAS le kilométrage** ;
+  (b) la page de chaque annonce `…/vehicles/item/{token}` fournit le reste :
+  `km` (kilométrage), `gearBox` (boîte), `horsePower`, `color`, `bodyType`,
+  `numberOfDoors`, `owner`, `combinedFuelConsumption`… → étape d'enrichissement,
+  idéalement via une `StealthySession` (un seul navigateur, garde le cookie
+  Radware, donc N pages-annonces rapides).
+- Lancer (une fois) : `uv sync --extra scraping` puis `uv run scrapling install`
+  (télécharge Camoufox). Puis :
+  `PYTHONPATH=src uv run python scripts/scrape_yad2.py --pages N --delay 4`
+  → `data/yad2_cars.json` au format `CarListing`. Rester à petit volume, usage
+  personnel/pédagogique, ne pas republier les données (`PYTHONPATH=src` est requis
+  tant que le projet vit dans le Desktop iCloud — voir mémoire du projet).
+- Référence cours : `week6/pricer/loaders.py` + `parser.py` (même pattern
+  « parse or reject » dans `to_listing_dict`).
+- Note : `CarListing.mileage_km` est désormais `int | None` (absent du flux ;
+  rempli par l'enrichissement page-annonce).
+- **Done quand** : ≥ quelques centaines d'annonces réelles **enrichies**
+  (kilométrage compris) chargées et validées par `validate_listing`.
 
 ### 1.2 Curation et analyse du dataset
 
