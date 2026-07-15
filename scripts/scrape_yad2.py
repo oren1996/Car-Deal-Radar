@@ -163,13 +163,14 @@ def _field_lower(value: Any, translations: dict[str, str] | None = None) -> str 
 
 
 def build_description(vehicle: dict[str, Any]) -> str:
-    """Synthesize the listing text from the item-page attributes, followed by
-    the seller's own description.
+    """Synthesize the listing text from a few high-signal item-page attributes,
+    followed by the seller's own description.
 
-    Weaves in the extra price-relevant fields (trim, horsepower, body type,
-    colour, seats/doors, fuel economy, safety, turbo, test validity, equipment)
-    rather than adding CarListing columns. All of these live on the item page,
-    not the search feed, so this degrades gracefully to the seller description
+    Weaves in only the price-relevant fields that the CarListing columns do NOT
+    already carry: trim, horsepower, turbo, body style and premium equipment.
+    Weak or redundant fields (colour, seats/doors, fuel economy, safety points,
+    test date) are intentionally left out to keep the text high-signal. All of
+    these live on the item page, so this degrades to the seller description
     alone when a field is absent.
     """
     lead: list[str] = []
@@ -185,38 +186,19 @@ def build_description(vehicle: dict[str, Any]) -> str:
     if vehicle.get("specification", {}).get("isTurbo") is True:
         lead.append("turbo")
 
-    color = _field_text(vehicle.get("color"))
-    if color:
-        lead.append(color)
-
     # Prefer the English car-family labels (Crossover, Jeep) over Hebrew bodyType.
     family = vehicle.get("carFamilyType")
-    if isinstance(family, list):
-        families = [f.get("textEng") for f in family if isinstance(f, dict) and f.get("textEng")]
-        if families:
-            lead.append("/".join(families))
-    body = _field_text(vehicle.get("bodyType"))
-    if body and not (isinstance(family, list) and family):
-        lead.append(body)
-
-    seats = _int_or_none(vehicle.get("seats"))
-    doors = _int_or_none(vehicle.get("numberOfDoors"))
-    if seats:
-        lead.append(f"{seats} seats")
-    if doors:
-        lead.append(f"{doors} doors")
-
-    consumption = vehicle.get("combinedFuelConsumption")
-    if isinstance(consumption, (int, float)) and not isinstance(consumption, bool) and consumption:
-        lead.append(f"{consumption} km/l combined")
-
-    safety = vehicle.get("specification", {}).get("safetyPoints")
-    if isinstance(safety, int) and not isinstance(safety, bool):
-        lead.append(f"safety {safety}")
-
-    test_date = vehicle.get("vehicleDates", {}).get("testDate")
-    if isinstance(test_date, str) and test_date.strip():
-        lead.append(f"test valid until {test_date[:10]}")
+    families = (
+        [f.get("textEng") for f in family if isinstance(f, dict) and f.get("textEng")]
+        if isinstance(family, list)
+        else []
+    )
+    if families:
+        lead.append("/".join(families))
+    else:
+        body = _field_text(vehicle.get("bodyType"))
+        if body:
+            lead.append(body)
 
     car_tags = vehicle.get("carTag")
     if isinstance(car_tags, list):
