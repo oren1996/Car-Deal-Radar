@@ -316,6 +316,12 @@ def enrich_listings(listings: dict[str, dict[str, Any]], delay: float) -> int:
     A single StealthySession keeps the Radware cookie warm, so the many item
     pages load without re-solving the challenge each time. Per-item failures are
     logged and skipped, keeping the search-feed data for that listing.
+
+    We deliberately do NOT wait for network_idle here: the __NEXT_DATA__ payload
+    is server-rendered into the initial HTML, and Yad2 item pages have constant
+    background traffic (ads, analytics) that never goes idle, so network_idle
+    would burn the full timeout on every page (~2 min each). A short timeout is
+    enough and fails fast if a page genuinely hangs.
     """
     from scrapling.fetchers import StealthySession
 
@@ -325,7 +331,7 @@ def enrich_listings(listings: dict[str, dict[str, Any]], delay: float) -> int:
         for index, (listing_id, base) in enumerate(list(listings.items()), start=1):
             print(f"Enriching {index}/{total}: {listing_id} ...")
             try:
-                result = session.fetch(base["url"], network_idle=True, timeout=120_000)
+                result = session.fetch(base["url"], timeout=30_000)
                 item_vehicle = extract_item_vehicle(extract_next_data(_checked_html(result)))
             except (RuntimeError, OSError) as exc:
                 print(f"  skipped ({exc})")
