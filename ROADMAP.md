@@ -23,21 +23,22 @@ ce projet à modifier, et un critère de fin (« Done quand »).
   annonces. La solution testée qui fonctionne est **Scrapling `StealthyFetcher`**
   (navigateur furtif Camoufox) — voir `scripts/scrape_yad2.py`. Le
   `__NEXT_DATA__` est bien présent une fois le défi JavaScript franchi.
-- **Scrape en deux temps** (le flux de recherche est incomplet) :
+- **Scrape en deux temps** (le flux de recherche est incomplet), **implémenté** :
   (a) le flux `…/vehicles/cars?page=N` donne ~37 annonces/page avec `token` +
   résumé (marque, modèle, année, prix, carburant, cylindrée, nb de mains,
   localisation) mais **PAS le kilométrage** ;
-  (b) la page de chaque annonce `…/vehicles/item/{token}` fournit le reste :
-  `km` (kilométrage), `gearBox` (boîte), `horsePower`, `color`, `bodyType`,
-  `numberOfDoors`, `owner`, `combinedFuelConsumption`… → étape d'enrichissement,
-  idéalement via une `StealthySession` (un seul navigateur, garde le cookie
-  Radware, donc N pages-annonces rapides).
+  (b) `enrich_listings()` visite ensuite chaque page-annonce
+  `…/vehicles/item/{token}` dans une **`StealthySession`** unique (garde le
+  cookie Radware) et fusionne le reste : `km` (kilométrage), `gearBox` (boîte),
+  `horsePower`, `carTag` (équipements)… via `extract_item_vehicle` +
+  `merge_enrichment`. Les échecs par annonce sont ignorés (on garde le résumé).
 - Lancer (une fois) : `uv sync --extra scraping` puis `uv run scrapling install`
   (télécharge Camoufox). Puis :
   `PYTHONPATH=src uv run python scripts/scrape_yad2.py --pages N --delay 4`
-  → `data/yad2_cars.json` au format `CarListing`. Rester à petit volume, usage
-  personnel/pédagogique, ne pas republier les données (`PYTHONPATH=src` est requis
-  tant que le projet vit dans le Desktop iCloud — voir mémoire du projet).
+  → `data/yad2_cars.json` au format `CarListing`. L'enrichissement est **actif
+  par défaut** ; `--no-enrich` pour un scrape rapide sans kilométrage. Rester à
+  petit volume, usage personnel/pédagogique, ne pas republier les données
+  (`PYTHONPATH=src` requis tant que le projet vit dans le Desktop iCloud).
 - Référence cours : `week6/pricer/loaders.py` + `parser.py` (même pattern
   « parse or reject » dans `to_listing_dict`).
 - Note : `CarListing.mileage_km` est désormais `int | None` (absent du flux ;

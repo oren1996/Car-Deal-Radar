@@ -86,6 +86,11 @@ def fetch_page(page: int, timeout: float = 120.0) -> str:
         network_idle=True,
         timeout=int(timeout * 1000),  # Scrapling expects milliseconds
     )
+    return _checked_html(result)
+
+
+def _checked_html(result: Any) -> str:
+    """Return a fetch result's HTML, raising if Yad2 served a Radware bot page."""
     html = _page_html(result)
     if getattr(result, "status", 200) != 200 or any(m in html for m in ANTIBOT_MARKERS):
         raise RuntimeError(
@@ -228,7 +233,90 @@ def to_listing_dict(vehicle: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def scrape(pages: int, delay: float, out_path: Path, dump_raw: bool) -> int:
+def _looks_like_vehicle(obj: Any) -> bool:
+    """True for a dict that carries a full vehicle record (item-page shape)."""
+    return isinstance(obj, dict) and "manufacturer" in obj and "price" in obj and "token" in obj
+
+
+def _find_vehicle_dict(obj: Any) -> dict[str, Any] | None:
+    """Depth-first search for a vehicle record anywhere in a nested structure."""
+    if _looks_like_vehicle(obj):
+        return obj
+    if isinstance(obj, dict):
+        for value in obj.values():
+            found = _find_vehicle_dict(value)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _find_vehicle_dict(item)
+            if found is not None:
+                return found
+    return None
+
+
+def extract_item_vehicle(next_data: dict[str, Any]) -> dict[str, Any] | None:
+    """Pull the single vehicle record from an item page's __NEXT_DATA__.
+
+    An item page stores the car as a dict (not the feed's dict-of-lists), so we
+    look through the dehydrated queries first, then fall back to a recursive
+    search to stay robust against structure changes.
+    """
+    queries = next_data.get("props", {}).get("pageProps", {}).get("dehydratedState", {}).get("queries", [])
+    for query in queries:
+        data = query.get("state", {}).get("data")
+        if _looks_like_vehicle(data):
+            return data
+    return _find_vehicle_dict(next_data)
+
+
+def merge_enrichment(base: dict[str, Any], item_vehicle: dict[str, Any]) -> dict[str, Any]:
+    """Fill a search-feed listing with the richer item-page fields (km, etc.).
+
+    The item record is a superset of the feed record, so any non-empty value it
+    provides overrides the base; the base survives as a fallback.
+    """
+    item = to_listing_dict(item_vehicle)
+    if item is None:
+        return base
+    merged = dict(base)
+    for key, value in item.items():
+        if value not in (None, "", []):
+            merged[key] = value
+    return merged
+
+
+def enrich_listings(listings: dict[str, dict[str, Any]], delay: float) -> int:
+    """Visit each listing's item page in one stealth session to add mileage etc.
+
+    A single StealthySession keeps the Radware cookie warm, so the many item
+    pages load without re-solving the challenge each time. Per-item failures are
+    logged and skipped, keeping the search-feed data for that listing.
+    """
+    from scrapling.fetchers import StealthySession
+
+    enriched = 0
+    total = len(listings)
+    with StealthySession(headless=True) as session:
+        for index, (listing_id, base) in enumerate(list(listings.items()), start=1):
+            print(f"Enriching {index}/{total}: {listing_id} ...")
+            try:
+                result = session.fetch(base["url"], network_idle=True, timeout=120_000)
+                item_vehicle = extract_item_vehicle(extract_next_data(_checked_html(result)))
+            except (RuntimeError, OSError) as exc:
+                print(f"  skipped ({exc})")
+                item_vehicle = None
+            if item_vehicle is not None:
+                listings[listing_id] = merge_enrichment(base, item_vehicle)
+                if listings[listing_id].get("mileage_km") is not None:
+                    enriched += 1
+            if index < total:
+                time.sleep(delay)
+    print(f"Enriched {enriched}/{total} listings with mileage from item pages")
+    return enriched
+
+
+def scrape(pages: int, delay: float, out_path: Path, dump_raw: bool, enrich: bool) -> int:
     """Scrape the requested number of pages and write CarListing-format JSON."""
     listings: dict[str, dict[str, Any]] = {}
     for page in range(1, pages + 1):
@@ -248,6 +336,10 @@ def scrape(pages: int, delay: float, out_path: Path, dump_raw: bool) -> int:
         print(f"  kept {page_count} listings")
         if page < pages:
             time.sleep(delay)
+
+    if enrich and listings:
+        # The search feed omits mileage; the item page carries it (roadmap 1.1).
+        enrich_listings(listings, delay)
 
     problems = 0
     for entry in listings.values():
@@ -270,11 +362,17 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=3.0, help="seconds to sleep between pages")
     parser.add_argument("--out", type=Path, default=Path("data/yad2_cars.json"), help="output JSON path")
     parser.add_argument("--dump-raw", action="store_true", help="also dump page 1's raw __NEXT_DATA__")
+    parser.add_argument(
+        "--enrich",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="visit each item page to add mileage and other missing fields (default: on)",
+    )
     args = parser.parse_args()
     if args.pages < 1:
         parser.error("--pages must be >= 1")
     try:
-        count = scrape(args.pages, args.delay, args.out, args.dump_raw)
+        count = scrape(args.pages, args.delay, args.out, args.dump_raw, args.enrich)
     except (RuntimeError, OSError) as exc:
         # RuntimeError: our anti-bot / parse guards. OSError: browser/network faults.
         print(f"\nScraping failed: {exc}", file=sys.stderr)
